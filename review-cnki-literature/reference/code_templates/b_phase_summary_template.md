@@ -236,12 +236,13 @@ def b2_summarize(relevant_list):
 - 作者：{{作者}}
 - 发表年份：{{年份}}
 - 页数：{{页数}}
+- 数据来源：{{数据获取的具体来源：数据库写明名称(如 Wind/CSMAR/RESSET/Choice/iFinD/交易所官网)；爬虫写明爬取对象和平台；公开数据写明发布机构；文献未交代写"未说明"}}
 
 ## 核心思路
 {{用3-5句话概括该文献的主要研究思路/方法论}}
 
 ## 数据与样本
-{{数据来源、样本区间、研究对象/市场;无则写"未说明"}}
+{{数据来源(与头部字段一致,可补细节)、样本区间、研究对象/市场;无则写"未说明"}}
 
 ## 模型与方法构建
 {{完整、客观抄录模型/指标的数学定义/函数形式,保留原始公式符号}}
@@ -373,6 +374,12 @@ def get_first_author(md_text):
     if not m:
         return ''
     return re.split(r'[,，;；、]', m.group(1))[0].strip()
+
+
+def get_data_source(md_text):
+    """从 individual.md 头部 '- 数据来源：...' 行提取数据来源(B2 模板必填字段; 缺失返回"未提取")"""
+    m = re.search(r'^-\s*数据来源[：:](.+)$', md_text, re.M)
+    return m.group(1).strip() if m else '未提取'
 
 
 def auto_fold_series(themes, author_by_filename):
@@ -531,7 +538,8 @@ def b4_thematic_summary(kept_list):
         clean_dups = {}
         for leader, followers in (th.get('duplicate_groups') or {}).items():
             if leader not in th['members']:
-                if leader in all_filenames:
+                # leader 已被去重分到其他主题时不得拉回(实测: LLM 把同一篇同时列进两个主题的 members/dups 会导致汇总重复)
+                if leader in all_filenames and leader not in covered:
                     th['members'].append(leader)
                     covered.add(leader)
                 else:
@@ -569,6 +577,17 @@ def b4_thematic_summary(kept_list):
         label = f"{n_main} 篇代表作 + {n_dup} 篇同团队重复版本" if n_dup else f"{n_main} 篇"
         one_line = (th.get('core_idea') or '').replace('\n', ' ').split('。')[0] + '。'
         lines.append(f"| {th['name']} | {label} | {one_line} |")
+    lines.append("")
+
+    # 数据来源汇总(取自 individual.md 头部"- 数据来源："字段,代码拼装零幻觉)
+    lines.append("## 数据来源汇总\n")
+    lines.append("| 文献 | 数据来源 |")
+    lines.append("|------|----------|")
+    for fn in sorted(all_filenames):
+        text = items_by_filename.get(fn, '')
+        title_m = re.match(r'#\s+(.+)', text)
+        title = title_m.group(1).strip() if title_m else fn
+        lines.append(f"| {title} | {get_data_source(text).replace('|', '、')} |")
     lines.append("")
 
     # 各主题详情
